@@ -1,6 +1,9 @@
 import numpy as np
 import cv2
 import argparse
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
+
 
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
@@ -23,7 +26,7 @@ def grabcut(img, rect, n_iter=5):
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
 
-    bgGMM, fgGMM = initalize_GMMs(img, mask)
+    bgGMM, fgGMM = initalize_GMMs(img, mask,n_components=5)
 
     num_iters = 1000
     for i in range(num_iters):
@@ -41,10 +44,26 @@ def grabcut(img, rect, n_iter=5):
     return mask, bgGMM, fgGMM
 
 
-def initalize_GMMs(img, mask):
+def initalize_GMMs(img, mask, n_components):
     # TODO: implement initalize_GMMs
-    bgGMM = None
-    fgGMM = None
+    #GaussianMixture - This class allows to estimate the parameters of a Gaussian mixture distribution.
+    bgGMM = GaussianMixture(n_components=n_components)
+    #Finding the centers
+    kMeans = KMeans(n_clusters=n_components)
+    kMeans.fit(img)
+    #Find the foreground and background GMMs based on the mask
+    bgGMM.means_ = kMeans.cluster_centers_(img[mask==0])
+    fgGMM.means_ = kMeans.cluster_centers_(img[mask == 1])
+
+    bgGMM.weights_ = np.ones(n_components) / n_components
+    fgGMM.weights_ = np.ones(n_components) / n_components
+
+
+    #לא הבנתי איך הם רצו לחשב כאן
+   # bgGMM.covariances_ =
+   # fgGMM.covariances_ =
+
+
 
     return bgGMM, fgGMM
 
