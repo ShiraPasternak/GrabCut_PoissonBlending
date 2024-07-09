@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import argparse
 from sklearn.cluster import KMeans
+from scipy.status import multivariate_normal
 
 
 
@@ -18,38 +19,37 @@ class GaussianMixture:
         self.pixels = pixels
         self.num_clusters = N_COMPONENTS
         self.means = np.zeros(N_COMPONENTS,3)
-        self.covariance = np.zeros(N_COMPONENTS, 3)
+        self.covariance = np.zeros(N_COMPONENTS, 3, 3)
         self.det = np.zeros(N_COMPONENTS)
         self.weight = np.zeros(N_COMPONENTS)
-        kMeans = KMeans(n_clusters=N_COMPONENTS)
-        kMeans.fit(pixels)
-        clusters_index(kMeans.lables_)
+        kMeans = KMeans(N_COMPONENTS)
+        self.clusters = kMeans.fit(pixels)
+        self.cluster_lables = clusters.lables_
+        clusters_index()
 
     def update_model(self,pixels,clusters):
         self.pixels = pixels
+        self.cluster_lables = clusters
         self.clusters_index(clusters)
         self.update_components()
         self.calc_means_cov_matrix()
 
     def clusters_index(self,clusters):
-        self.cluster = clusters
-        self.cluster_index = clusters
-        self.num_clusters = len(np.unique(clusters))
+        self.num_cluster = len(np.unique(clusters))
         for index,new_index in enumerate(np.unique(clusters)):
-            self.cluster[self.cluster == new_index] = index
+            self.cluster_lables[self.cluster_lables == new_index] = index
 
 
     def update_components(self):
         self.means = np.zeros(self.num_clusters,3)
-        self.covariance = np.zeros(self.num_clusters, 3)
+        self.covariance = np.zeros(self.num_clusters,3, 3)
         self.det = np.zeros(self.num_clusters)
         self.weight = np.zeros(self.num_clusters)
 
     def calc_means_cov_matrix(self):
         for index in range(self.num_clusters):
-            data = self.pixels[self.cluster_labels == index]
-            self.means[index] = np.mean(data,axis = 0)
-            self.covariance[index] = np.cov(data.T)
+            self.means[index] = np.mean(self.pixels[self.cluster_labels == index],axis = 0)
+            self.covariance[index] = np.cov(self.pixels[self.cluster_labels == index].T)
             self.det[index] = np.linalg.det(self.covariance[index])
             self.weight[index] = np.sum(self.cluster_labels == index)/self.pixels.shape[0]
 
@@ -111,10 +111,8 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     fgGMM.calc_means_cov_matrix()
     cluster_bgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img,mask,true))
     cluster_fgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img, mask, true))
-
-
-
-
+    bgGMM.update_model(selecting_pixels(img,mask,true),cluster_bgGMM)
+    fgGMM.update_model(selecting_pixels(img, mask, false), cluster_fgGMM)
     return bgGMM, fgGMM
 
 def selecting_pixels(img,mask,bg_Flag):
