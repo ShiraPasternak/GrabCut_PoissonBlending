@@ -25,7 +25,8 @@ class GaussianMixture:
         kMeans = KMeans(N_COMPONENTS)
         self.clusters = kMeans.fit(pixels)
         self.cluster_lables = clusters.lables_
-        clusters_index()
+        self.clusters_index()
+
 
     def update_model(self,pixels,clusters):
         self.pixels = pixels
@@ -33,6 +34,7 @@ class GaussianMixture:
         self.clusters_index(clusters)
         self.update_components()
         self.calc_means_cov_matrix()
+
 
     def clusters_index(self,clusters):
         self.num_cluster = len(np.unique(clusters))
@@ -46,6 +48,7 @@ class GaussianMixture:
         self.det = np.zeros(self.num_clusters)
         self.weight = np.zeros(self.num_clusters)
 
+
     def calc_means_cov_matrix(self):
         for index in range(self.num_clusters):
             self.means[index] = np.mean(self.pixels[self.cluster_labels == index],axis = 0)
@@ -53,17 +56,15 @@ class GaussianMixture:
             self.det[index] = np.linalg.det(self.covariance[index])
             self.weight[index] = np.sum(self.cluster_labels == index)/self.pixels.shape[0]
 
-
-   def highest_likelihood_component(self,pixels):
-       likelihoods = []
-       for cluster_index in range(self.n):
-           weight = self.weights[cluster_index]
-           mean = self.means[cluster_index]
-           cov = self.covs[cluster_index]
-           pdf_value = multivariate_normal.pdf(pixels, mean=mean, cov=cov, allow_singular=True)
-           likelihoods.append(weight * pdf_value)
-       return np.argmax(likelihoods,axis=0)
-
+    def highest_likelihood_component(self, pixels):
+        likelihoods = []
+        for cluster_index in range(self.n):
+            weight = self.weights[cluster_index]
+            mean = self.means[cluster_index]
+            cov = self.covs[cluster_index]
+            pdf_value = multivariate_normal.pdf(pixels, mean=mean, cov=cov, allow_singular=True)
+            likelihoods.append(weight * pdf_value)
+        return np.argmax(likelihoods, axis=0)
 
 
 # Define the GrabCut algorithm function
