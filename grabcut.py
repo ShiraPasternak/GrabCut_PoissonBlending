@@ -195,17 +195,24 @@ def update_mask(mincut_sets, mask):
     return updated_mask
 
 
-def check_convergence(energy):
-    # TODO: implement convergence check
-    convergence = False
-    return convergence
+def check_convergence(energy,prev_energy = None):
+    if energy is none:
+        convergence = False
+    diff = np.abs(energy-prev_energy)
+    return diff< threshold
 
 
 def cal_metric(predicted_mask, gt_mask):
-    # TODO: implement metric calculation
+    return 100*calc_accuraccy(predicted_mask, gt_mask), 100*jaccard_similarity(predicted_mask, gt_mask)
 
-    return 100, 100
+def calc_accuraccy(predicted_mask, gt_mask):
+    corrcect = np.sum(predicted_mask==gt_mask)
+    return corrcect/(gt_mask.size)
 
+def jaccard_similarity(predicted_mask, gt_mask):
+    intersection = np.sum(np.logical_and(predicted_mask==GC_FGD,gt_mask==GC_FGD))
+    union = np.sum(np.logical_or(predicted_mask==GC_FGD,gt_mask==GC_FGD))
+    return intersection/union
 
 def parse():
     parser = argparse.ArgumentParser()
