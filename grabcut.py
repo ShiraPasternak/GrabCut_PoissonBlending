@@ -2,13 +2,68 @@ import numpy as np
 import cv2
 import argparse
 from sklearn.cluster import KMeans
-from sklearn.mixture import GaussianMixture
+
 
 
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
 GC_PR_BGD = 2 # Soft bg pixel
 GC_PR_FGD = 3 # Soft fg pixel
+
+
+N_COMPONENTS = 5
+
+class GaussianMixture:
+    def __init__(self,pixels):
+        self.pixels = pixels
+        self.num_clusters = N_COMPONENTS
+        self.means = np.zeros(N_COMPONENTS,3)
+        self.covariance = np.zeros(N_COMPONENTS, 3)
+        self.det = np.zeros(N_COMPONENTS)
+        self.weight = np.zeros(N_COMPONENTS)
+        kMeans = KMeans(n_clusters=N_COMPONENTS)
+        kMeans.fit(pixels)
+        clusters_index(kMeans.lables_)
+
+    def update_model(self,pixels,clusters):
+        self.pixels = pixels
+        self.clusters_index(clusters)
+        self.update_components()
+        self.calc_means_cov_matrix()
+
+    def clusters_index(self,clusters):
+        self.cluster = clusters
+        self.cluster_index = clusters
+        self.num_clusters = len(np.unique(clusters))
+        for index,new_index in enumerate(np.unique(clusters)):
+            self.cluster[self.cluster == new_index] = index
+
+
+    def update_components(self):
+        self.means = np.zeros(self.num_clusters,3)
+        self.covariance = np.zeros(self.num_clusters, 3)
+        self.det = np.zeros(self.num_clusters)
+        self.weight = np.zeros(self.num_clusters)
+
+    def calc_means_cov_matrix(self):
+        for index in range(self.num_clusters):
+            data = self.pixels[self.cluster_labels == index]
+            self.means[index] = np.mean(data,axis = 0)
+            self.covariance[index] = np.cov(data.T)
+            self.det[index] = np.linalg.det(self.covariance[index])
+            self.weight[index] = np.sum(self.cluster_labels == index)/self.pixels.shape[0]
+
+
+   def highest_likelihood_component(self,pixels):
+       likelihoods = []
+       for cluster_index in range(self.n):
+           weight = self.weights[cluster_index]
+           mean = self.means[cluster_index]
+           cov = self.covs[cluster_index]
+           pdf_value = multivariate_normal.pdf(pixels, mean=mean, cov=cov, allow_singular=True)
+           likelihoods.append(weight * pdf_value)
+       return np.argmax(likelihoods,axis=0)
+
 
 
 # Define the GrabCut algorithm function
@@ -26,7 +81,7 @@ def grabcut(img, rect, n_iter=5):
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
 
-    bgGMM, fgGMM = initalize_GMMs(img, mask,n_components=5)
+    bgGMM, fgGMM = initalize_GMMs(img, mask)
 
     num_iters = 1000
     for i in range(num_iters):
@@ -44,34 +99,30 @@ def grabcut(img, rect, n_iter=5):
     return mask, bgGMM, fgGMM
 
 
-def initalize_GMMs(img, mask, n_components):
-    # TODO: implement initalize_GMMs
-    #GaussianMixture - This class allows to estimate the parameters of a Gaussian mixture distribution.
-    bgGMM = GaussianMixture(n_components=n_components)
-    #Finding the centers
-    kMeans = KMeans(n_clusters=n_components)
-    kMeans.fit(img)
-    #Find the foreground and background GMMs based on the mask
-    bgGMM.means_ = kMeans.cluster_centers_(img[mask==0])
-    fgGMM.means_ = kMeans.cluster_centers_(img[mask == 1])
-
-    bgGMM.weights_ = np.ones(n_components) / n_components
-    fgGMM.weights_ = np.ones(n_components) / n_components
-
-
-    #לא הבנתי איך הם רצו לחשב כאן
-   # bgGMM.covariances_ =
-   # fgGMM.covariances_ =
-
-
-
+def initalize_GMMs(img, mask):
+    bgGMM = GaussianMixture(selecting_pixels(img,mask,true))
+    fgGMM = GaussianMixture(selecting_pixels(img,mask,false))
     return bgGMM, fgGMM
 
 
 # Define helper functions for the GrabCut algorithm
 def update_GMMs(img, mask, bgGMM, fgGMM):
-    # TODO: implement GMM component assignment step
+    bgGMM.calc_means_cov_matrix()
+    fgGMM.calc_means_cov_matrix()
+    cluster_bgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img,mask,true))
+    cluster_fgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img, mask, true))
+
+
+
+
     return bgGMM, fgGMM
+
+def selecting_pixels(img,mask,bg_Flag):
+    if bg_Flag:
+        return img[np.logical_or(mask == GC_PR_BGD,mask==GC_BGD)]
+    return img[np.logical_or(mask == GC_PR_FGD,mask==GC_FGD)]
+
+
 
 
 def calculate_mincut(img, mask, bgGMM, fgGMM):
