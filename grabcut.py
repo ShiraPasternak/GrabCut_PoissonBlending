@@ -81,11 +81,13 @@ def grabcut(img, rect, n_iter=5):
 
     # Initalize the inner square to Foreground
     mask[y:y + h, x:x + w] = GC_PR_FGD
-    mask[rect[1] + rect[3] // 2, rect[0] + rect[2] // 2] = GC_FGD
+    # TODO check with and without
+    # mask[rect[1] + rect[3] // 2, rect[0] + rect[2] // 2] = GC_FGD
 
     bgGMM, fgGMM = initalize_GMMs(img, mask)
+    old_energy = None
 
-    num_iters = 1000
+    num_iters = 12
     for i in range(num_iters):
         # Update GMM
         bgGMM, fgGMM = update_GMMs(img, mask, bgGMM, fgGMM)
@@ -94,9 +96,12 @@ def grabcut(img, rect, n_iter=5):
 
         mask = update_mask(mincut_sets, mask)
 
-        if check_convergence(energy):
+        if check_convergence(energy, old_energy):
             break
+        old_energy = energy
 
+    mask[mask == GC_PR_BGD] = GC_BGD
+    mask[mask == GC_PR_FGD] = GC_FGD
     # Return the final mask and the GMMs
     return mask, bgGMM, fgGMM
 
@@ -226,13 +231,14 @@ def calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge):
 
     fg_indices_flat = np.ravel_multi_index(fg_indices, mask.shape)
     bg_indices_flat = np.ravel_multi_index(bg_indices, mask.shape)
-    # create edges from source to fg_pixels and from sink to bg_pixels
-    fg_edges_to_source = []
-    for fg_index in fg_indices_flat:
-        fg_edges_to_source.append([source_edge, fg_index])
-    bg_edges_to_sink = []
-    for bg_index in bg_indices_flat:
-        bg_edges_to_sink.append([sink_edge, bg_index])
+    # create edges from source to fg_pixels
+    fg_edges_to_source = np.zeros((fg_indices_flat.size, 2), dtype=int)
+    fg_edges_to_source[:, 0] = source_edge
+    fg_edges_to_source[:, 1] = fg_indices_flat
+    # create edges from sink to bg_pixels
+    bg_edges_to_sink = np.zeros((bg_indices_flat.size, 2), dtype=int)
+    bg_edges_to_sink[:, 0] = sink_edge
+    bg_edges_to_sink[:, 1] = bg_indices_flat
 
     # set weights of fg and bg edges to be K
     fg_weight = np.full(fg_indices_flat.size, K)
@@ -242,11 +248,6 @@ def calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge):
     weights = np.concatenate((soft_fg_weight, soft_bg_weight, fg_weight, bg_weight), axis=0)
 
     graph.add_edges(edges, attributes={"weight": np.array(weights)})
-
-def calc_energy(min_cut, source_edge, sink_edge):
-    min_cut.partition[0].remove(source_edge)
-    min_cut.partition[1].remove(sink_edge)
-    return min_cut.value
 
 
 def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf about i
@@ -263,8 +264,11 @@ def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf abou
         delete_t_links(source_edge, sink_edge)
     calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge)
     min_cut = graph.mincut(source_edge, sink_edge, "weight")
-    energy = calc_energy(min_cut, source_edge, sink_edge)
-    return min_cut.partition, energy
+    min_cut_sets = min_cut.partition
+    min_cut_sets[0].remove(source_edge)
+    min_cut_sets[1].remove(sink_edge)
+    energy = min_cut.value
+    return min_cut_sets, energy
 
 
 def update_mask(mincut_sets, mask):
@@ -280,11 +284,13 @@ def update_mask(mincut_sets, mask):
 
 
 def check_convergence(energy,prev_energy = None):
-    threshold = 3000 # update after running
-    if energy is None:
+    threshold = 1600  # update after running
+    if prev_energy is None or prev_energy == 0:
         convergence = False
-    diff = np.abs(energy-prev_energy)
-    return diff < threshold
+    else:
+        diff = np.abs(energy - prev_energy)
+        convergence = diff < threshold
+    return convergence
 
 
 def cal_metric(predicted_mask, gt_mask):
