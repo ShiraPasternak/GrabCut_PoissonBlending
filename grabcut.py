@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import argparse
 from sklearn.cluster import KMeans
-from scipy.status import multivariate_normal
+from scipy.stats import multivariate_normal
 import igraph
 
 GC_BGD = 0  # Hard bg pixel
@@ -20,43 +20,43 @@ class GaussianMixture:
     def __init__(self, pixels):
         self.pixels = pixels
         self.num_clusters = N_COMPONENTS
-        self.means = np.zeros(N_COMPONENTS, 3)
-        self.covariance = np.zeros(N_COMPONENTS, 3, 3)
+        self.means = np.zeros((N_COMPONENTS, 3))
+        self.covs = np.zeros((N_COMPONENTS, 3, 3))
         self.det = np.zeros(N_COMPONENTS)
-        self.weight = np.zeros(N_COMPONENTS)
+        self.weights = np.zeros(N_COMPONENTS)
         kMeans = KMeans(N_COMPONENTS)
         self.clusters = kMeans.fit(pixels)
-        self.cluster_lables = self.clusters.lables_
-        self.clusters_index()
+        self.cluster_labels = self.clusters.labels_
+        self.clusters_index(self.clusters)
 
     def update_model(self, pixels, clusters):
         self.pixels = pixels
-        self.cluster_lables = clusters
+        self.cluster_labels = clusters
         self.clusters_index(clusters)
         self.update_components()
         self.calc_means_cov_matrix()
 
     def clusters_index(self, clusters):
-        self.num_cluster = len(np.unique(clusters))
+        self.num_clusters = len(np.unique(clusters))
         for index, new_index in enumerate(np.unique(clusters)):
-            self.cluster_lables[self.cluster_lables == new_index] = index
+            self.cluster_labels[self.cluster_labels == new_index] = index
 
     def update_components(self):
-        self.means = np.zeros(self.num_clusters, 3)
-        self.covariance = np.zeros(self.num_clusters, 3, 3)
+        self.means = np.zeros((self.num_clusters, 3))
+        self.covs = np.zeros((self.num_clusters, 3, 3))
         self.det = np.zeros(self.num_clusters)
-        self.weight = np.zeros(self.num_clusters)
+        self.weights = np.zeros(self.num_clusters)
 
     def calc_means_cov_matrix(self):
         for index in range(self.num_clusters):
             self.means[index] = np.mean(self.pixels[self.cluster_labels == index], axis=0)
-            self.covariance[index] = np.cov(self.pixels[self.cluster_labels == index].T)
-            self.det[index] = np.linalg.det(self.covariance[index])
-            self.weight[index] = np.sum(self.cluster_labels == index) / self.pixels.shape[0]
+            self.covs[index] = np.cov(self.pixels[self.cluster_labels == index].T)
+            self.det[index] = np.linalg.det(self.covs[index])
+            self.weights[index] = np.sum(self.cluster_labels == index) / self.pixels.shape[0]
 
     def highest_likelihood_component(self, pixels):
         likelihoods = []
-        for cluster_index in range(self.n):
+        for cluster_index in range(self.num_clusters):
             weight = self.weights[cluster_index]
             mean = self.means[cluster_index]
             cov = self.covs[cluster_index]
@@ -76,7 +76,7 @@ def grabcut(img, rect, n_iter=5):
     w -= x
     h -= y
 
-    #Initalize the inner square to Foreground
+    # Initalize the inner square to Foreground
     mask[y:y + h, x:x + w] = GC_PR_FGD
     mask[rect[1] + rect[3] // 2, rect[0] + rect[2] // 2] = GC_FGD
 
@@ -84,7 +84,7 @@ def grabcut(img, rect, n_iter=5):
 
     num_iters = 1000
     for i in range(num_iters):
-        #Update GMM
+        # Update GMM
         bgGMM, fgGMM = update_GMMs(img, mask, bgGMM, fgGMM)
 
         mincut_sets, energy = calculate_mincut(img, mask, bgGMM, fgGMM, i)
@@ -109,7 +109,7 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     bgGMM.calc_means_cov_matrix()
     fgGMM.calc_means_cov_matrix()
     cluster_bgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img, mask, True))
-    cluster_fgGMM = bgGMM.highest_likelihood_component(selecting_pixels(img, mask, False))
+    cluster_fgGMM = fgGMM.highest_likelihood_component(selecting_pixels(img, mask, False))
     bgGMM.update_model(selecting_pixels(img, mask, True), cluster_bgGMM)
     fgGMM.update_model(selecting_pixels(img, mask, False), cluster_fgGMM)
     return bgGMM, fgGMM
@@ -134,15 +134,62 @@ def calc_beta(img):
     return 1.0 / 2.0 * np.mean(np.pow(squared_diffs, 2))
 
 
-def calc_N_links(img):
-    pass  # todo
+def calc_n_links(img):
+    img_indices = np.arange(img.shape[0] * img.shape[1]).reshape(img.shape[:2])
+    rows, cols = img.shape[:2]
+
+    edges = []
+    diffs = []
+
+    for i in range(rows):
+        for j in range(cols):
+            neighbors = [
+                (i, j + 1), (i + 1, j), (i, j - 1), (i - 1, j)
+            ]
+            current_pixel_index = img_indices[i, j]
+            for ni, nj in neighbors:
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    neighbor_pixel_index = img_indices[ni, nj]
+                    edges.append([current_pixel_index, neighbor_pixel_index])
+                    diff = np.linalg.norm(img[i, j] - img[ni, nj])
+                    diffs.append(diff)
+
+    edges = np.array(edges)
+    diffs = np.array(diffs)
+    weight = 50.0 * (np.exp(-beta * np.square(diffs)))
+
+    graph.add_edges(edges, attributes={"weight": weight})
+
+    edges_diag = []
+    diffs_diag = []
+
+    for i in range(rows):
+        for j in range(cols):
+            neighbors = [
+                (i + 1, j + 1), (i - 1, j - 1), (i + 1, j - 1), (i - 1, j + 1)
+            ]
+            current_pixel_index = img_indices[i, j]
+            for ni, nj in neighbors:
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    neighbor_pixel_index = img_indices[ni, nj]
+                    edges_diag.append([current_pixel_index, neighbor_pixel_index])
+                    diff = np.linalg.norm(img[i, j] - img[ni, nj])
+                    diffs_diag.append(diff)
+
+    edges_diag = np.array(edges_diag)
+    diffs_diag = np.array(diffs_diag)
+    weight = 50.0 / np.sqrt(2.0) * (np.exp(-beta * np.square(diffs_diag)))
+
+    graph.add_edges(edges_diag, attributes={"weight": weight})
+
+    calc_k(img)
 
 
 def calc_sum_weight_of_node(node):
     return sum([edge["weight"]for edge in graph.es.select(_source=node)])
 
 
-def calc_K(img):
+def calc_k(img):
     max_weight = 0.0
     for node in range(img.shape[0] * img.shape[1]):
         sum_weight = calc_sum_weight_of_node(node)
@@ -151,13 +198,47 @@ def calc_K(img):
     return max_weight
 
 
-def delete_t_links(img):
-    pass  # todo
+def delete_t_links(source_edge, sink_edge):
+    graph.delete_edges(graph.es.select(_source=source_edge))
+    graph.delete_edges(graph.es.select(_source=sink_edge))
 
 
-def calc_t_links(img):
-    pass  # todo
+def calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge):
+    soft_indices = np.where((mask == GC_PR_BGD) | (mask == GC_PR_FGD))
+    bg_indices = np.where(mask == GC_BGD)
+    fg_indices = np.where(mask == GC_FGD)
 
+    soft_indices_flat = np.ravel_multi_index(soft_indices, mask.shape)
+    # create edges from source to fg soft pixels
+    t_fg_edges = np.zeros((soft_indices_flat.size, 2), dtype=int)
+    t_fg_edges[:, 0] = source_edge
+    t_fg_edges[:, 1] = soft_indices_flat
+    # create edges from sink to bg soft pixels
+    t_bg_edges = np.zeros((soft_indices_flat.size, 2), dtype=int)
+    t_bg_edges[:, 0] = sink_edge
+    t_bg_edges[:, 1] = soft_indices_flat
+
+    soft_fg_weight = -np.log(np.sum(fgGMM.highest_likelihood_component(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
+    soft_bg_weight = -np.log(np.sum(bgGMM.highest_likelihood_component(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
+
+    fg_indices_flat = np.ravel_multi_index(fg_indices, mask.shape)
+    bg_indices_flat = np.ravel_multi_index(bg_indices, mask.shape)
+    # create edges from source to fg_pixels and from sink to bg_pixels
+    fg_edges_to_source = []
+    for fg_index in fg_indices_flat:
+        fg_edges_to_source.append([source_edge, fg_index])
+    bg_edges_to_sink = []
+    for bg_index in bg_indices_flat:
+        bg_edges_to_sink.append([sink_edge, bg_index])
+
+    # set weights of fg and bg edges to be K
+    fg_weight = np.full(fg_indices_flat.size, K)
+    bg_weight = np.full(bg_indices_flat.size, K)
+
+    edges = np.concatenate((t_fg_edges, t_bg_edges, fg_edges_to_source, bg_edges_to_sink), axis=0)
+    weights = np.concatenate((soft_fg_weight, soft_bg_weight, fg_weight, bg_weight), axis=0)
+
+    graph.add_edges(edges, attributes={"weight": np.array(weights)})
 
 def calc_energy(min_cut, source_edge, sink_edge):
     min_cut.partition[0].remove(source_edge)
@@ -170,14 +251,14 @@ def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf abou
     source_edge = img.shape[0] * img.shape[1]
     sink_edge = img.shape[0] * img.shape[1] + 1
     if i == 0:  # first iteration
-        global graph
+        global graph, beta, K
         graph = igraph.Graph(img.shape[0] * img.shape[1] + 2)
-        calc_beta(img)
-        calc_N_links(img)
-        calc_K(img)
+        beta = calc_beta(img)
+        calc_n_links(img)
+        K = calc_k(img)
     else:
-        delete_t_links(img)
-    calc_t_links(img)
+        delete_t_links(source_edge, sink_edge)
+    calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge)
     min_cut = graph.mincut(source_edge, sink_edge, "weight")
     energy = calc_energy(min_cut, source_edge, sink_edge)
     return min_cut.partition, energy
@@ -196,10 +277,11 @@ def update_mask(mincut_sets, mask):
 
 
 def check_convergence(energy,prev_energy = None):
-    if energy is none:
+    threshold = 3000 # update after running
+    if energy is None:
         convergence = False
     diff = np.abs(energy-prev_energy)
-    return diff< threshold
+    return diff < threshold
 
 
 def cal_metric(predicted_mask, gt_mask):
