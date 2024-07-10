@@ -55,6 +55,9 @@ class GaussianMixture:
             self.weights[index] = np.sum(self.cluster_labels == index) / self.pixels.shape[0]
 
     def highest_likelihood_component(self, pixels):
+        return np.argmax(self.likelihood(pixels), axis=0)
+
+    def likelihood(self, pixels):
         likelihoods = []
         for cluster_index in range(self.num_clusters):
             weight = self.weights[cluster_index]
@@ -62,7 +65,7 @@ class GaussianMixture:
             cov = self.covs[cluster_index]
             pdf_value = multivariate_normal.pdf(pixels, mean=mean, cov=cov, allow_singular=True)
             likelihoods.append(weight * pdf_value)
-        return np.argmax(likelihoods, axis=0)
+        return likelihoods
 
 
 # Define the GrabCut algorithm function
@@ -218,8 +221,8 @@ def calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge):
     t_bg_edges[:, 0] = sink_edge
     t_bg_edges[:, 1] = soft_indices_flat
 
-    soft_fg_weight = -np.log(np.sum(fgGMM.highest_likelihood_component(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
-    soft_bg_weight = -np.log(np.sum(bgGMM.highest_likelihood_component(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
+    soft_fg_weight = -np.log(np.sum(fgGMM.likelihood(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
+    soft_bg_weight = -np.log(np.sum(bgGMM.likelihood(img.reshape(-1, 3)[soft_indices_flat]), axis=0))
 
     fg_indices_flat = np.ravel_multi_index(fg_indices, mask.shape)
     bg_indices_flat = np.ravel_multi_index(bg_indices, mask.shape)
@@ -267,7 +270,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf abou
 def update_mask(mincut_sets, mask):
     # TODO: implement mask update step
     updated_mask = np.copy(mask)
-    fg_set, bg_set = set(mincut_sets[0]), set(mincut_sets[1])
+    fg_set, bg_set = mincut_sets[0], mincut_sets[1]
     for i in bg_set:
         if updated_mask[i // mask.shape[1], i % mask.shape[1]] != GC_BGD:
             updated_mask[i // mask.shape[1], i % mask.shape[1]] = GC_PR_BGD
