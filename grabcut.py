@@ -4,7 +4,6 @@ import argparse
 from sklearn.cluster import KMeans
 from scipy.stats import multivariate_normal
 import igraph
-import time
 
 GC_BGD = 0  # Hard bg pixel
 GC_FGD = 1  # Hard fg pixel, will not be used
@@ -20,9 +19,9 @@ K = 0.0
 class GaussianMixture:
     def __init__(self, pixels):
         self.pixels = pixels
+        self.num_clusters = N_COMPONENTS
         self.means = np.zeros((N_COMPONENTS, 3))
         self.covs = np.zeros((N_COMPONENTS, 3, 3))
-        # self.det = np.zeros(N_COMPONENTS)
         self.weights = np.zeros(N_COMPONENTS)
         kMeans = KMeans(N_COMPONENTS)
         self.clusters = kMeans.fit(pixels)
@@ -44,14 +43,12 @@ class GaussianMixture:
     def update_components(self):
         self.means = np.zeros((self.num_clusters, 3))
         self.covs = np.zeros((self.num_clusters, 3, 3))
-        # self.det = np.zeros(self.num_clusters)
         self.weights = np.zeros(self.num_clusters)
 
     def calc_means_cov_matrix(self):
         for index in range(self.num_clusters):
             self.means[index] = np.mean(self.pixels[self.cluster_labels == index], axis=0)
             self.covs[index] = np.cov(self.pixels[self.cluster_labels == index].T)
-            # self.det[index] = np.linalg.det(self.covs[index])
             self.weights[index] = np.sum(self.cluster_labels == index) / self.pixels.shape[0]
 
     def highest_likelihood_component(self, pixels):
@@ -79,17 +76,15 @@ def grabcut(img, rect, n_iter=5):
     w -= x
     h -= y
 
-    # Initalize the inner square to Foreground
+    # Initialize the inner square to Foreground
     mask[y:y + h, x:x + w] = GC_PR_FGD
-    # TODO check with and without
-    # mask[rect[1] + rect[3] // 2, rect[0] + rect[2] // 2] = GC_FGD
+    mask[rect[1] + rect[3] // 2, rect[0] + rect[2] // 2] = GC_FGD
 
     bgGMM, fgGMM = initalize_GMMs(img, mask)
     old_energy = None
 
     for i in range(n_iter):
         # Update GMM
-        print("we are in iteration num " + str(i))
         bgGMM, fgGMM = update_GMMs(img, mask, bgGMM, fgGMM)
 
         mincut_sets, energy = calculate_mincut(img, mask, bgGMM, fgGMM, i)
@@ -251,7 +246,6 @@ def calc_t_links(img, mask, bgGMM, fgGMM, source_edge, sink_edge):
 
 
 def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf about i
-    # TODO: implement energy (cost) calculation step and mincut
     source_edge = img.shape[0] * img.shape[1]
     sink_edge = img.shape[0] * img.shape[1] + 1
     if i == 0:  # first iteration
@@ -272,7 +266,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM ,i):  # add explanation to pdf abou
 
 
 def update_mask(mincut_sets, mask):
-    # TODO: implement mask update step
     updated_mask = np.copy(mask)
     fg_set, bg_set = mincut_sets[0], mincut_sets[1]
     for i in bg_set:
@@ -283,22 +276,21 @@ def update_mask(mincut_sets, mask):
     return updated_mask
 
 
-def check_convergence(energy, prev_energy = None):
+def check_convergence(energy, prev_energy=None):
     threshold = 0.0005  # update after running
     if prev_energy is None or prev_energy == 0:
         convergence = False
     else:
         diff = np.abs((energy - prev_energy)/energy)
         convergence = diff < threshold
-        print(diff)
     return convergence
 
 
 def cal_metric(predicted_mask, gt_mask):
-    return 100 * calc_accuraccy(predicted_mask, gt_mask), 100 * jaccard_similarity(predicted_mask, gt_mask)
+    return 100 * calc_accuracy(predicted_mask, gt_mask), 100 * jaccard_similarity(predicted_mask, gt_mask)
 
 
-def calc_accuraccy(predicted_mask, gt_mask):
+def calc_accuracy(predicted_mask, gt_mask):
     correct = np.sum(predicted_mask == gt_mask)
     return correct / gt_mask.size
 
@@ -321,9 +313,6 @@ def parse():
 
 if __name__ == '__main__':
     # Load an example image and define a bounding box around the object of interest
-    start = time.time()
-    print("hello")
-
     args = parse()
 
     if args.input_img_path == '':
@@ -349,8 +338,6 @@ if __name__ == '__main__':
         acc, jac = cal_metric(mask, gt_mask)
         print(f'Accuracy={acc}, Jaccard={jac}')
 
-    end = time.time()
-    print(end - start)
     # Apply the final mask to the input image and display the results
     img_cut = img * (mask[:, :, np.newaxis])
     cv2.imshow('Original Image', img)
